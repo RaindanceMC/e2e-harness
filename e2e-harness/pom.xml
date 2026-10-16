@@ -6,7 +6,7 @@
 
     <parent>
         <groupId>de.raindancer.modules</groupId>
-        <artifactId>rains-flexible-modules</artifactId>
+        <artifactId>e2e-harness-build</artifactId>
         <version>1.0.0</version>
     </parent>
 
@@ -24,7 +24,6 @@
 
     <properties>
         <!-- A test tool: nothing on a server ever depends on it. -->
-        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <repositories>

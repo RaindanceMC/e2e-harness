@@ -418,6 +418,8 @@ public final class Bot {
                 loaded = true;
             }
             case ClientboundAddEntityPacket added -> entityIds.put(added.getUuid(), added.getEntityId());
+            case org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundCommandSuggestionsPacket offered ->
+                    suggestions.put(offered.getTransactionId(), List.of(offered.getMatches()));
             case ClientboundSetTimePacket time -> time.getClockUpdates().values()
                     .forEach(clock -> timesOfDay.add(Math.floorMod(clock.totalTicks(), 24000L)));
             case ClientboundRemoveEntitiesPacket removed -> {
@@ -728,6 +730,31 @@ public final class Bot {
      * server counts 20 for every chat line or command and forgets one a tick, kicking at 200. The bot
      * keeps the same count and waits rather than be kicked for spam.
      */
+    private final Map<Integer, List<String>> suggestions = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicInteger suggestionIds = new java.util.concurrent.atomic.AtomicInteger();
+
+    /**
+     * What the server offers for a command typed so far — {@code "disenchant "} for the first argument — as the
+     * client's tab completion asks for it. Paper sends no answer at all when it has nothing to offer, so none within
+     * {@link #NO_SUGGESTIONS} is an empty list.
+     */
+    public List<String> complete(String typed) {
+        int id = suggestionIds.incrementAndGet();
+        session.send(new org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundCommandSuggestionPacket(
+                id, typed.startsWith("/") ? typed : "/" + typed));
+        long until = System.nanoTime() + NO_SUGGESTIONS.toNanos();
+        while (System.nanoTime() < until) {
+            List<String> offered = suggestions.remove(id);
+            if (offered != null) {
+                return offered;
+            }
+            Await.ticks(1);
+        }
+        return List.of();
+    }
+
+    private static final java.time.Duration NO_SUGGESTIONS = java.time.Duration.ofSeconds(2);
+
     public Bot run(String command) {
         pace();
         session.send(new ServerboundChatCommandPacket(command.startsWith("/") ? command.substring(1) : command));

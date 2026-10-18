@@ -20,7 +20,7 @@
 
     <!-- This repository's own versions: bump them here. CI publishes a new version on the next push to master. -->
     <properties>
-        <e2e-harness.version>0.7.0</e2e-harness.version>
+        <e2e-harness.version>0.8.0</e2e-harness.version>
     </properties>
 
     <modules>

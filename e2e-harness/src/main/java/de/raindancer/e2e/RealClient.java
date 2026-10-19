@@ -138,20 +138,49 @@ public final class RealClient implements AutoCloseable {
     }
 
     private void pointerTo(int x, int y) throws IOException, InterruptedException {
+        pointer(x, y, false);
+    }
+
+    /**
+     * A left click at a point of the screen — for the client's own screens no bot can answer, such as the
+     * server's resource pack offer (at GUI scale 2 on this display its "Yes" sits at (484, 408)).
+     */
+    public void click(int x, int y) {
+        try {
+            pointer(x, y, true);
+        } catch (IOException failed) {
+            throw new UncheckedIOException(failed);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
+
+    private void pointer(int x, int y, boolean click) throws IOException, InterruptedException {
         Path source = folder.resolve("PointerTo.java");
-        if (!Files.exists(source)) {
+        if (!Files.exists(source) || !Files.readString(source).contains("BUTTON1")) {
             Files.writeString(source, """
                     public class PointerTo {
                         public static void main(String[] args) throws Exception {
                             java.awt.Robot robot = new java.awt.Robot();
                             robot.mouseMove(Integer.parseInt(args[0]), Integer.parseInt(args[1]));
                             robot.delay(100);
+                            if (args.length > 2) {
+                                robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                                robot.delay(50);
+                                robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
+                                robot.delay(100);
+                            }
                         }
                     }
                     """);
         }
-        ProcessBuilder builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Djava.awt.headless=false", source.toString(), String.valueOf(x), String.valueOf(y))
+        List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-Djava.awt.headless=false", source.toString(), String.valueOf(x), String.valueOf(y)));
+        if (click) {
+            command.add("click");
+        }
+        ProcessBuilder builder = new ProcessBuilder(command)
                 .redirectErrorStream(true).redirectOutput(folder.resolve("pointer.log").toFile());
         builder.environment().put("DISPLAY", display);
         Process move = builder.start();

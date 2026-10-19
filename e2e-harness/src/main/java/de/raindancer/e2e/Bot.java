@@ -241,6 +241,9 @@ public final class Bot {
         this.version = E2e.MINECRAFT_VERSION;
     }
 
+    /** Whether the sneak key is held, as last sent — an entity click carries it. */
+    private volatile boolean sneaking;
+
     public String name() {
         return name;
     }
@@ -904,6 +907,7 @@ public final class Bot {
 
     /** Holds the sneak key down, or lets it go. */
     public Bot sneak(boolean down) {
+        sneaking = down;
         session.send(new org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundPlayerInputPacket(
                 false, false, false, false, false, down, false));
         Await.ticks(2);
@@ -912,6 +916,7 @@ public final class Bot {
 
     /** Which movement keys are held, as the client reports them whenever they change. */
     public Bot keys(boolean forward, boolean backward, boolean left, boolean right, boolean jump, boolean sneak, boolean sprint) {
+        sneaking = sneak;
         session.send(new org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.level.ServerboundPlayerInputPacket(
                 forward, backward, left, right, jump, sneak, sprint));
         return this;
@@ -1092,9 +1097,12 @@ public final class Bot {
         return this;
     }
 
-    /** Right clicks whatever has this UUID, at its feet, with the main hand — talking to a villager, say. */
+    /**
+     * Right clicks whatever has this UUID, at its feet, with the main hand — talking to a villager, say. Sneaking if
+     * the sneak key is held: the server takes the sneak state from this very packet, as from a real client.
+     */
     public Bot interact(UUID target) {
-        session.send(new ServerboundInteractPacket(entityIdOf(target), Vector3d.ZERO, false));
+        session.send(new ServerboundInteractPacket(entityIdOf(target), Vector3d.ZERO, sneaking));
         return this;
     }
 

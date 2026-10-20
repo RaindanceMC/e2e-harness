@@ -172,6 +172,8 @@ public final class Bot {
     private final UUID id;
     private final String version;
     private volatile ClientSession session;
+    /** Where the server sent it with Minecraft's transfer, "host:port", oldest first. */
+    private final List<String> transfers = new CopyOnWriteArrayList<>();
     private volatile boolean joined;
     private volatile String disconnectReason = "";
     private volatile GameMode gameMode = GameMode.SURVIVAL;
@@ -305,12 +307,22 @@ public final class Bot {
     }
 
     private void connect() {
+        connect("127.0.0.1", through > 0 ? through : server.port(), false);
+    }
+
+    private void connect(String host, int port, boolean transferred) {
         reset();
         MinecraftProtocol protocol = new MinecraftProtocol(new GameProfile(id, name), null);
         ClientSession client = ClientNetworkSessionFactory.factory()
-                .setAddress("127.0.0.1", through > 0 ? through : server.port())
+                .setAddress(host, port)
                 .setProtocol(protocol)
                 .create();
+        // A transfer is followed here (see follow), not by MCProtocolLib: that binds the new connection to the old
+        // one's local port, which is often still taken, and the transfer then silently goes nowhere.
+        client.setFlag(org.geysermc.mcprotocollib.protocol.MinecraftConstants.FOLLOW_TRANSFERS, false);
+        if (transferred) {
+            client.setFlag(org.geysermc.mcprotocollib.network.BuiltinFlags.CLIENT_TRANSFERRING, true);
+        }
         client.addListener(new SessionAdapter() {
             @Override
             public void packetReceived(Session from, Packet packet) {
@@ -323,12 +335,29 @@ public final class Bot {
 
             @Override
             public void disconnected(DisconnectedEvent event) {
+                if (session != client) {
+                    return;   // the connection a transfer left behind
+                }
                 disconnectReason = PLAIN.serialize(event.getReason());
                 joined = false;
             }
         });
         session = client;
         client.connect(true);
+    }
+
+    /** What a vanilla client does with a transfer: leaves, and logs in at the new address saying it was sent. */
+    private void follow(Session from, String host, int port) {
+        transfers.add(host + ":" + port);
+        Thread.ofVirtual().name(name + "-transfer").start(() -> {
+            from.disconnect(Component.translatable("disconnect.transfer"));
+            connect(host, port, true);
+        });
+    }
+
+    /** Every address a server transferred this client to, "host:port", oldest first; it followed each. */
+    public List<String> transfers() {
+        return List.copyOf(transfers);
     }
 
     private void reset() {
@@ -386,6 +415,10 @@ public final class Bot {
 
     private void handle(Session from, Packet packet) {
         MinecraftProtocol protocol = (MinecraftProtocol) from.getPacketProtocol();
+        if (packet instanceof org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundTransferPacket transfer) {
+            follow(from, transfer.getHost(), transfer.getPort());
+            return;
+        }
         // Sent while configuring, before the game: what a translating proxy (Geyser) has to be able to read.
         if (packet instanceof org.geysermc.mcprotocollib.protocol.packet.configuration.clientbound.ClientboundRegistryDataPacket data) {
             registries.put(data.getRegistry().asString(), List.copyOf(data.getEntries()));

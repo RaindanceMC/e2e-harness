@@ -28,6 +28,11 @@ public final class VelocityProxy implements AutoCloseable {
     private final int port;
     private final String secret;
     private final Map<String, Integer> servers;
+    private final List<Path> plugins = new ArrayList<>();
+    private final Map<String, String> files = new LinkedHashMap<>();
+    private final Map<String, String> forcedHosts = new LinkedHashMap<>();
+    private String bindHost = "127.0.0.1";
+    private boolean acceptsTransfers;
     private Process process;
 
     private VelocityProxy(Path folder, Map<String, Integer> servers, String secret) {
@@ -58,6 +63,36 @@ public final class VelocityProxy implements AutoCloseable {
         return port;
     }
 
+    /** A plugin jar for the proxy's {@code plugins/} folder. */
+    public VelocityProxy plugin(Path jar) {
+        plugins.add(jar);
+        return this;
+    }
+
+    /** A file written into the proxy's folder before it starts, e.g. a plugin's config. */
+    public VelocityProxy file(String relative, String content) {
+        files.put(relative, content);
+        return this;
+    }
+
+    /** Players connecting by {@code host} go to {@code server} — velocity.toml's forced-hosts. */
+    public VelocityProxy forcedHost(String host, String server) {
+        forcedHosts.put(host, server);
+        return this;
+    }
+
+    /** Lets players in who were transferred here by another server (Minecraft 1.20.5's transfer). */
+    public VelocityProxy acceptsTransfers() {
+        acceptsTransfers = true;
+        return this;
+    }
+
+    /** {@code [::]} to also take IPv6 — {@code *.localhost} names resolve to {@code ::1}. Default 127.0.0.1. */
+    public VelocityProxy bind(String host) {
+        bindHost = host;
+        return this;
+    }
+
     public VelocityProxy start() {
         try {
             Files.createDirectories(folder);
@@ -65,6 +100,16 @@ public final class VelocityProxy implements AutoCloseable {
                     StandardCopyOption.REPLACE_EXISTING);
             Files.writeString(folder.resolve("forwarding.secret"), secret);
             Files.writeString(folder.resolve("velocity.toml"), toml());
+            Path pluginFolder = folder.resolve("plugins");
+            Files.createDirectories(pluginFolder);
+            for (Path jar : plugins) {
+                Files.copy(jar, pluginFolder.resolve(jar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+            }
+            for (Map.Entry<String, String> file : files.entrySet()) {
+                Path target = folder.resolve(file.getKey());
+                Files.createDirectories(target.getParent());
+                Files.writeString(target, file.getValue());
+            }
             Files.deleteIfExists(folder.resolve("logs").resolve("latest.log"));
             List<String> command = new ArrayList<>(List.of(
                     Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-Xmx256m",
@@ -109,9 +154,12 @@ public final class VelocityProxy implements AutoCloseable {
         servers.forEach((name, serverPort) -> entries.append(name).append(" = \"127.0.0.1:").append(serverPort)
                 .append("\"\n"));
         String first = servers.keySet().iterator().next();
+        StringBuilder forced = new StringBuilder();
+        forcedHosts.forEach((host, server) -> forced.append('"').append(host).append("\" = [\"").append(server)
+                .append("\"]\n"));
         return """
                 config-version = "2.9"
-                bind = "127.0.0.1:%d"
+                bind = "%s:%d"
                 motd = "e2e"
                 show-max-players = 20
                 online-mode = false
@@ -125,7 +173,7 @@ public final class VelocityProxy implements AutoCloseable {
                 %stry = ["%s"]
 
                 [forced-hosts]
-
+                %s
                 [advanced]
                 compression-threshold = 256
                 login-ratelimit = 0
@@ -134,10 +182,11 @@ public final class VelocityProxy implements AutoCloseable {
                 bungee-plugin-message-channel = true
                 failover-on-unexpected-server-disconnect = true
                 log-player-connections = true
+                accepts-transfers = %s
 
                 [query]
                 enabled = false
-                """.formatted(port, entries, first);
+                """.formatted(bindHost, port, entries, first, forced, acceptsTransfers);
     }
 
     @Override

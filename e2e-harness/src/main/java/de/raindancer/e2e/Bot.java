@@ -175,6 +175,9 @@ public final class Bot {
     /** Where the server sent it with Minecraft's transfer, "host:port", oldest first. */
     private final List<String> transfers = new CopyOnWriteArrayList<>();
     private volatile boolean joined;
+    /** The dialog window open on this bot, if any, and how many the server has opened so far. */
+    private volatile ShownDialog dialog;
+    private final java.util.concurrent.atomic.AtomicInteger dialogsShown = new java.util.concurrent.atomic.AtomicInteger();
     private volatile String disconnectReason = "";
     private volatile GameMode gameMode = GameMode.SURVIVAL;
     private volatile String world = "";
@@ -355,6 +358,60 @@ public final class Bot {
         });
     }
 
+    /** The dialog window open now, if the server opened one and has not closed it. */
+    public Optional<ShownDialog> dialog() {
+        return Optional.ofNullable(dialog);
+    }
+
+    /** Waits for the server to open a dialog after the {@code before}-th one, and returns it. */
+    public ShownDialog awaitDialog(int before, java.time.Duration within) {
+        return Await.value("a dialog window after the " + before + " so far", within,
+                () -> dialogsShown.get() > before ? dialog : null);
+    }
+
+    /** How many dialog windows the server has opened on this bot. */
+    public int dialogsShown() {
+        return dialogsShown.get();
+    }
+
+    /**
+     * Presses a button of the open dialog, as the client does: a custom action sends its id with its additions and
+     * every input box's value; a static click runs its command or does nothing a bot can see; no action closes it.
+     *
+     * @param inputs what was typed into the input boxes, by key
+     */
+    public Bot pressDialogButton(String label, java.util.Map<String, String> inputs) {
+        ShownDialog open = dialog().orElseThrow(() -> new AssertionError(name + " has no dialog open"));
+        ShownDialog.Button button = open.button(label).orElseThrow(() -> new AssertionError(
+                "no button '" + label + "' in the dialog; it has " + open.buttons().stream()
+                        .map(ShownDialog.Button::label).toList()));
+        org.cloudburstmc.nbt.NbtMap action = button.action();
+        dialog = null;
+        if (action == null) {
+            return this;
+        }
+        String type = action.getString("type").replace("minecraft:", "");
+        switch (type) {
+            case "dynamic/custom" -> {
+                org.cloudburstmc.nbt.NbtMapBuilder payload = org.cloudburstmc.nbt.NbtMap.builder();
+                Object additions = action.get("additions");
+                if (additions instanceof org.cloudburstmc.nbt.NbtMap extra) {
+                    payload.putAll(extra);
+                }
+                for (String key : open.inputs()) {
+                    payload.putString(key, inputs.getOrDefault(key, ""));
+                }
+                send(new org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundCustomClickActionPacket(
+                        net.kyori.adventure.key.Key.key(action.getString("id")), payload.build()));
+            }
+            case "run_command" -> run(action.getString("command").replaceFirst("^/", ""));
+            default -> {
+                // suggest_command, open_url, copy_to_clipboard: nothing reaches the server.
+            }
+        }
+        return this;
+    }
+
     /** Every address a server transferred this client to, "host:port", oldest first; it followed each. */
     public List<String> transfers() {
         return List.copyOf(transfers);
@@ -427,6 +484,14 @@ public final class Bot {
             return;
         }
         switch (packet) {
+            case org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundShowDialogGamePacket shown -> {
+                if (shown.getDialog().isCustom()) {
+                    dialog = ShownDialog.of(shown.getDialog().custom());
+                    dialogsShown.incrementAndGet();
+                }
+            }
+            case org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundClearDialogPacket cleared ->
+                    dialog = null;
             case ClientboundLoginPacket login -> {
                 ownEntityId = login.getEntityId();
                 spawnInfo(login.getCommonPlayerSpawnInfo());

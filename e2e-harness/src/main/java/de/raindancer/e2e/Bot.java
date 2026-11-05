@@ -168,6 +168,7 @@ public final class Bot {
     private final PaperServer server;
     /** A port to connect to instead of the server's own — a proxy in front of it. 0 is the server's own. */
     private volatile int through;
+    private String throughHost = "127.0.0.1";
     private final String name;
     private final UUID id;
     private final String version;
@@ -262,6 +263,16 @@ public final class Bot {
         return this;
     }
 
+    /**
+     * As {@link #through(int)}, by a name — the address a player types, which the proxy's forced-hosts route by.
+     * {@code *.localhost} names reach the loopback address (bind the proxy to {@code [::]}).
+     */
+    public Bot through(String host, int port) {
+        this.throughHost = host;
+        this.through = port;
+        return this;
+    }
+
     public UUID id() {
         return id;
     }
@@ -310,7 +321,7 @@ public final class Bot {
     }
 
     private void connect() {
-        connect("127.0.0.1", through > 0 ? through : server.port(), false);
+        connect(through > 0 ? throughHost : "127.0.0.1", through > 0 ? through : server.port(), false);
     }
 
     private void connect(String host, int port, boolean transferred) {

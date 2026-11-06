@@ -156,6 +156,43 @@ public final class RealClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Holds a key of the keyboard down for a while, as a player would — {@code holdKey(KeyEvent.VK_SPACE, 1500)} to
+     * keep jump held. The game has to be in the world, not on a screen of its own, to take it as a key of the game.
+     */
+    public void holdKey(int keyCode, long millis) {
+        try {
+            Path source = folder.resolve("KeyHold.java");
+            if (!Files.exists(source)) {
+                Files.writeString(source, """
+                        public class KeyHold {
+                            public static void main(String[] args) throws Exception {
+                                java.awt.Robot robot = new java.awt.Robot();
+                                int key = Integer.parseInt(args[0]);
+                                robot.keyPress(key);
+                                robot.delay(Integer.parseInt(args[1]));
+                                robot.keyRelease(key);
+                                robot.delay(50);
+                            }
+                        }
+                        """);
+            }
+            ProcessBuilder builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                    "-Djava.awt.headless=false", source.toString(), String.valueOf(keyCode), String.valueOf(millis))
+                    .redirectErrorStream(true).redirectOutput(folder.resolve("keys.log").toFile());
+            builder.environment().put("DISPLAY", display);
+            Process held = builder.start();
+            if (!held.waitFor(millis / 1000 + 60, TimeUnit.SECONDS) || held.exitValue() != 0) {
+                throw new IllegalStateException("the key could not be held — see " + folder.resolve("keys.log"));
+            }
+        } catch (IOException failed) {
+            throw new UncheckedIOException(failed);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
+
     private void pointer(int x, int y, boolean click) throws IOException, InterruptedException {
         Path source = folder.resolve("PointerTo.java");
         if (!Files.exists(source) || !Files.readString(source).contains("BUTTON1")) {

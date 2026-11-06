@@ -391,6 +391,22 @@ public final class E2eProbe extends JavaPlugin implements Listener {
             sender.sendMessage("used " + tag + " for " + player.getName());
             return true;
         }
+        if (args.length >= 4 && args[0].equalsIgnoreCase("skin")) {
+            Player player = Bukkit.getPlayerExact(args[1]);
+            if (player == null) {
+                sender.sendMessage("No player " + args[1]);
+                return true;
+            }
+            // A Mojang-signed skin (the textures property of a real account) on an offline-mode test player,
+            // so the screenshot client sees the real skin.
+            player.getScheduler().run(this, task -> {
+                com.destroystokyo.paper.profile.PlayerProfile profile = player.getPlayerProfile();
+                profile.setProperty(new com.destroystokyo.paper.profile.ProfileProperty("textures", args[2], args[3]));
+                player.setPlayerProfile(profile);
+            }, null);
+            sender.sendMessage("skin set for " + player.getName());
+            return true;
+        }
         if (args.length >= 3 && args[0].equalsIgnoreCase("xray")) {
             if (args[2].equalsIgnoreCase("on")) {
                 xrayFor.add(args[1]);
@@ -401,7 +417,7 @@ public final class E2eProbe extends JavaPlugin implements Listener {
             return true;
         }
         sender.sendMessage("e2e as <player> <command...> | e2e click <player> <slot> | e2e use <player> <tag> [sneak]"
-                + " | e2e xray <player> on|off");
+                + " | e2e xray <player> on|off | e2e skin <player> <value> <signature>");
         return true;
     }
 

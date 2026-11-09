@@ -190,6 +190,41 @@ public final class RealClient implements AutoCloseable {
     }
 
     /**
+     * Holds a key for {@code millis} — {@code java.awt.event.KeyEvent.VK_W} walks forward — with the game window
+     * focused by a click into its middle first, where nothing is when no screen is open.
+     */
+    public void press(int keyCode, int millis) {
+        try {
+            Path source = folder.resolve("PressKey.java");
+            Files.writeString(source, """
+                    public class PressKey {
+                        public static void main(String[] args) throws Exception {
+                            java.awt.Robot robot = new java.awt.Robot();
+                            int key = Integer.parseInt(args[0]);
+                            robot.keyPress(key);
+                            robot.delay(Integer.parseInt(args[1]));
+                            robot.keyRelease(key);
+                            robot.delay(100);
+                        }
+                    }
+                    """);
+            ProcessBuilder builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                    "-Djava.awt.headless=false", source.toString(), String.valueOf(keyCode), String.valueOf(millis))
+                    .redirectErrorStream(true).redirectOutput(folder.resolve("key.log").toFile());
+            builder.environment().put("DISPLAY", display);
+            Process key = builder.start();
+            if (!key.waitFor(60, TimeUnit.SECONDS) || key.exitValue() != 0) {
+                throw new IllegalStateException("the key could not be pressed — see " + folder.resolve("key.log"));
+            }
+        } catch (IOException failed) {
+            throw new UncheckedIOException(failed);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
+
+    /**
      * The same picture with the pointer resting on one slot of an open six-row chest window, so its tooltip
      * is in it — where the words are. At GUI scale 2 on this display a slot is 36 pixels, the first one centred
      * at (496, 190).

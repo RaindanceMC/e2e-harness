@@ -220,6 +220,8 @@ public final class Bot {
     private volatile boolean inventorySynced;
     /** This client's own entity id, from the login. */
     private volatile int ownEntityId = Integer.MIN_VALUE;
+    private final java.util.Set<Class<?>> recording = ConcurrentHashMap.newKeySet();
+    private final List<Packet> recorded = new CopyOnWriteArrayList<>();
     /** Knockback the server sent this client itself, in order: {vx, vy, vz}. */
     private final List<double[]> pushes = new CopyOnWriteArrayList<>();
     /** Players taken off this client's tab list. */
@@ -493,6 +495,9 @@ public final class Bot {
         }
         if (protocol.getInboundState() != ProtocolState.GAME) {
             return;
+        }
+        if (recording.contains(packet.getClass())) {
+            recorded.add(packet);
         }
         switch (packet) {
             case org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundShowDialogGamePacket shown -> {
@@ -1340,6 +1345,25 @@ public final class Bot {
         actionBars.clear();
         bossBarsSeen.clear();
         return this;
+    }
+
+    /**
+     * From now on keeps every packet of this kind the bot receives, for {@link #received} — for what no other method
+     * here reads. Only the kinds asked for: a bot receives thousands of chunk packets a minute.
+     */
+    public Bot record(Class<? extends Packet> type) {
+        recording.add(type);
+        return this;
+    }
+
+    /** Every packet of this kind received since {@link #record} was called for it, oldest first. */
+    public <T extends Packet> List<T> received(Class<T> type) {
+        return recorded.stream().filter(type::isInstance).map(type::cast).toList();
+    }
+
+    /** The id the server gave this bot's own player, or {@code Integer.MIN_VALUE} before it joined. */
+    public int entityId() {
+        return ownEntityId;
     }
 
     public List<String> titles() {

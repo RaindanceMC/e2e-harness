@@ -33,6 +33,9 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.Clien
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundBlockUpdatePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSectionBlocksUpdatePacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundPingPacket;
+import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundStoreCookiePacket;
+import org.geysermc.mcprotocollib.protocol.packet.cookie.clientbound.ClientboundCookieRequestPacket;
+import org.geysermc.mcprotocollib.protocol.packet.cookie.serverbound.ServerboundCookieResponsePacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundPongPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundPlayerInfoRemovePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.entity.ClientboundRemoveEntitiesPacket;
@@ -235,6 +238,7 @@ public final class Bot {
     /** Whether it answers the server's ping packets, as every vanilla client does. */
     private volatile boolean answersPings = true;
     /** Pings that came in while it held back its answers, oldest first. */
+    private final Map<String, byte[]> cookies = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Queue<Integer> heldPings = new java.util.concurrent.ConcurrentLinkedQueue<>();
     /** Single-block updates the server sent, in order: {x, y, z, block state id}. */
     private final List<int[]> blockUpdates = new CopyOnWriteArrayList<>();
@@ -572,6 +576,10 @@ public final class Bot {
                     pushes.add(new double[]{motion.getMovement().getX(), motion.getMovement().getY(), motion.getMovement().getZ()});
                 }
             }
+            // Like a real client: cookies are kept for the connection, so they survive moves through a proxy.
+            case ClientboundStoreCookiePacket store -> cookies.put(store.getKey().asString(), store.getPayload());
+            case ClientboundCookieRequestPacket request ->
+                    from.send(new ServerboundCookieResponsePacket(request.getKey(), cookies.get(request.getKey().asString())));
             case ClientboundPingPacket ping -> {
                 if (answersPings) {
                     from.send(new ServerboundPongPacket(ping.getId()));

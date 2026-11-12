@@ -34,6 +34,9 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.Clien
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSectionBlocksUpdatePacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundPingPacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundStoreCookiePacket;
+import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundResourcePackPushPacket;
+import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundResourcePackPacket;
+import org.geysermc.mcprotocollib.protocol.data.game.ResourcePackStatus;
 import org.geysermc.mcprotocollib.protocol.packet.cookie.clientbound.ClientboundCookieRequestPacket;
 import org.geysermc.mcprotocollib.protocol.packet.cookie.serverbound.ServerboundCookieResponsePacket;
 import org.geysermc.mcprotocollib.protocol.packet.common.serverbound.ServerboundPongPacket;
@@ -237,6 +240,7 @@ public final class Bot {
     private volatile String tabHeader = "";
     /** Whether it answers the server's ping packets, as every vanilla client does. */
     private volatile boolean answersPings = true;
+    private volatile boolean acceptsPacks;
     /** Pings that came in while it held back its answers, oldest first. */
     private final Map<String, byte[]> cookies = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Queue<Integer> heldPings = new java.util.concurrent.ConcurrentLinkedQueue<>();
@@ -580,6 +584,12 @@ public final class Bot {
             case ClientboundStoreCookiePacket store -> cookies.put(store.getKey().asString(), store.getPayload());
             case ClientboundCookieRequestPacket request ->
                     from.send(new ServerboundCookieResponsePacket(request.getKey(), cookies.get(request.getKey().asString())));
+            // Says it took the pack and loaded it, without downloading anything: enough for the server's side.
+            case ClientboundResourcePackPushPacket push when acceptsPacks -> {
+                from.send(new ServerboundResourcePackPacket(push.getId(), ResourcePackStatus.ACCEPTED));
+                from.send(new ServerboundResourcePackPacket(push.getId(), ResourcePackStatus.DOWNLOADED));
+                from.send(new ServerboundResourcePackPacket(push.getId(), ResourcePackStatus.SUCCESSFULLY_LOADED));
+            }
             case ClientboundPingPacket ping -> {
                 if (answersPings) {
                     from.send(new ServerboundPongPacket(ping.getId()));
@@ -1359,6 +1369,12 @@ public final class Bot {
      * From now on keeps every packet of this kind the bot receives, for {@link #received} — for what no other method
      * here reads. Only the kinds asked for: a bot receives thousands of chunk packets a minute.
      */
+    /** Answers resource packs like a client that accepts and loads them; by default a bot ignores them. */
+    public Bot acceptPacks() {
+        acceptsPacks = true;
+        return this;
+    }
+
     public Bot record(Class<? extends Packet> type) {
         recording.add(type);
         return this;

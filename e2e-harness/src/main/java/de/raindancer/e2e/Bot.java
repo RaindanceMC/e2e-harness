@@ -71,6 +71,7 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.inventory.C
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundChunkBatchFinishedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundGameEventPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundLevelParticlesPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.ClientboundSoundEntityPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.level.ClientboundSoundPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundResetScorePacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.scoreboard.ClientboundSetDisplayObjectivePacket;
@@ -627,6 +628,8 @@ public final class Bot {
             case ClientboundPlayerCombatKillPacket ignored -> dead = true;
             case ClientboundSetHeldSlotPacket held -> heldSlot = held.getSlot();
             case ClientboundSoundPacket sound -> soundsHeard.add(sound.getSound().getName().replace("minecraft:", ""));
+            // A sound that follows an entity (Sound.Emitter.self(): music that walks with the player).
+            case ClientboundSoundEntityPacket sound -> soundsHeard.add(sound.getSound().getName().replace("minecraft:", ""));
             case ClientboundLevelParticlesPacket particles ->
                     particlesSeen.add(particles.getParticle().getType().name());
             case ClientboundSystemChatPacket line -> {
